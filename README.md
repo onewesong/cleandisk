@@ -18,7 +18,7 @@ CleanDisk 是一个仅面向 macOS arm64 的本地磁盘清理应用。前端使
 
 ```bash
 npm install
-npm run tauri dev
+make start
 ```
 
 验证与构建：
@@ -54,24 +54,23 @@ brew uninstall --cask cleandisk
 
 GitHub Actions 会在推送到 `main` 或向 `main` 提交 Pull Request 时运行前端测试、前端构建和 Rust 测试。
 
-推送格式为 `v<semver>` 的标签会自动发布仅支持 Apple Silicon 的 macOS arm64 应用，例如 `v0.2.0`。发布前必须把以下三个文件中的版本号同步为不带 `v` 的相同版本：
-
-- `package.json`
-- `src-tauri/Cargo.toml`
-- `src-tauri/tauri.conf.json`
-
-发布示例：
+推送格式为 `v<semver>` 的标签会自动发布仅支持 Apple Silicon 的 macOS arm64 应用。项目提供一键发布命令，默认将当前版本提升一个 patch：
 
 ```bash
-# 先将三个版本文件都更新为 0.2.0，然后提交并推送
-git add package.json package-lock.json src-tauri/Cargo.toml src-tauri/Cargo.lock src-tauri/tauri.conf.json
-git commit -m "chore: release v0.2.0"
-git push origin main
-git tag v0.2.0
-git push origin v0.2.0
+make release
 ```
 
-CI 会校验标签与三个版本文件完全一致，随后创建公开的 GitHub Release，并上传 `.app` 压缩产物。发布包使用无需证书的 ad-hoc 签名，但没有经过 Apple 公证；首次打开时 macOS 仍可能显示“未知开发者”提示，需要在“系统设置 > 隐私与安全性”中确认打开。
+也可以选择升级级别或指定版本：
+
+```bash
+make release VERSION=minor
+make release VERSION=major
+make release VERSION=0.3.0
+```
+
+发布命令要求在干净且与 `origin/main` 完全同步的 `main` 分支执行。它会同步 `package.json`、`src-tauri/Cargo.toml` 和 `src-tauri/tauri.conf.json`，更新锁文件，运行完整测试，提交并推送 `main`；只有 GitHub CI 成功后才会创建并推送版本标签。随后 Release 工作流会创建公开的 GitHub Release，并上传 `.app` 压缩产物。
+
+发布包使用无需证书的 ad-hoc 签名，但没有经过 Apple 公证；首次打开时 macOS 仍可能显示“未知开发者”提示，需要在“系统设置 > 隐私与安全性”中确认打开。
 
 ## 结构
 
