@@ -70,7 +70,7 @@ pub fn begin_scan(
 ) -> Result<String, String> {
     let scan_id = Uuid::new_v4().to_string();
     let cancel = Arc::new(AtomicBool::new(false));
-    let (home, configured) = {
+    let (home, configured, categories) = {
         let mut inner = state.inner.lock().map_err(|_| "状态锁损坏")?;
         if state.cleaning.load(Ordering::Relaxed) {
             return Err("清理正在进行".into());
@@ -78,26 +78,32 @@ pub fn begin_scan(
         if inner.active_scan.is_some() {
             return Err("已有扫描正在进行".into());
         }
+        let categories = scanner::validate_categories(options.categories)?;
         let home = home_dir()?;
         let mut configured = settings::load(&settings_path(&app)?, &home);
         if let Some(roots) = options.project_roots {
             configured = settings::validate_roots(&home, roots)?;
         }
+        inner.sessions.clear();
         inner.active_scan = Some((scan_id.clone(), cancel.clone()));
-        (home, configured)
+        (home, configured, categories)
     };
     let app_clone = app.clone();
     let id = scan_id.clone();
-    let _ = on_event.send(ScanEvent::Started {
-        scan_id: id.clone(),
-    });
     tauri::async_runtime::spawn(async move {
         let channel = on_event.clone();
         let scan_id_for_work = id.clone();
         let result = tauri::async_runtime::spawn_blocking(move || {
-            scanner::scan(scan_id_for_work, home, configured, cancel, |event| {
-                let _ = channel.send(event);
-            })
+            scanner::scan(
+                scan_id_for_work,
+                home,
+                configured,
+                categories,
+                cancel,
+                |event| {
+                    let _ = channel.send(event);
+                },
+            )
         })
         .await;
         let state = app_clone.state::<AppState>();
@@ -160,7 +166,7 @@ pub async fn clean_candidates(
     if candidate_ids.is_empty() {
         return Err("请选择至少一个项目".into());
     }
-    let selected = {
+    let (selected, scan_categories) = {
         let inner = state.inner.lock().map_err(|_| "状态锁损坏")?;
         if inner.active_scan.is_some() {
             return Err("扫描仍在进行".into());
@@ -168,24 +174,26 @@ pub async fn clean_candidates(
         if state.cleaning.swap(true, Ordering::SeqCst) {
             return Err("清理已在进行".into());
         }
-        let result = inner
-            .sessions
-            .get(&scan_id)
-            .ok_or_else(|| "扫描会话已失效，请重新扫描".to_string())
-            .and_then(|session| {
-                candidate_ids
-                    .iter()
-                    .map(|id| {
-                        session
-                            .candidates
-                            .get(id)
-                            .cloned()
-                            .ok_or_else(|| format!("未知候选：{id}"))
-                    })
-                    .collect::<Result<Vec<_>, _>>()
-            });
+        let session = match inner.sessions.get(&scan_id) {
+            Some(session) => session,
+            None => {
+                state.cleaning.store(false, Ordering::SeqCst);
+                return Err("扫描会话已失效，请重新扫描".into());
+            }
+        };
+        let scan_categories = session.categories.clone();
+        let result = candidate_ids
+            .iter()
+            .map(|id| {
+                session
+                    .candidates
+                    .get(id)
+                    .cloned()
+                    .ok_or_else(|| format!("未知候选：{id}"))
+            })
+            .collect::<Result<Vec<_>, _>>();
         match result {
-            Ok(items) => items,
+            Ok(items) => (items, scan_categories),
             Err(error) => {
                 state.cleaning.store(false, Ordering::SeqCst);
                 return Err(error);
@@ -230,6 +238,7 @@ pub async fn clean_candidates(
                     refreshed_id,
                     home,
                     settings,
+                    scan_categories,
                     Arc::new(AtomicBool::new(false)),
                     |_| {},
                 )

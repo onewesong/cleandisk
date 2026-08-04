@@ -21,10 +21,12 @@ pub struct RawCandidate {
 }
 pub trait CleanerPlugin: Send + Sync {
     fn id(&self) -> &'static str;
+    fn category(&self) -> Category;
     fn discover(
         &self,
         context: &ScanContext,
         cancel: &AtomicBool,
+        visit: &mut dyn FnMut(&Path),
     ) -> Result<Vec<RawCandidate>, String>;
 }
 
@@ -55,7 +57,7 @@ fn children(base: &Path) -> Vec<PathBuf> {
         .unwrap_or_default()
 }
 
-fn newest_mtime(path: &Path) -> Result<i64, String> {
+fn newest_mtime(path: &Path, visit: &mut dyn FnMut(&Path)) -> Result<i64, String> {
     let mut newest = fs::symlink_metadata(path)
         .map_err(|e| e.to_string())?
         .modified()
@@ -68,6 +70,7 @@ fn newest_mtime(path: &Path) -> Result<i64, String> {
         .into_iter()
         .filter_map(Result::ok)
     {
+        visit(entry.path());
         let modified = fs::symlink_metadata(entry.path())
             .and_then(|m| m.modified())
             .ok()
@@ -78,8 +81,8 @@ fn newest_mtime(path: &Path) -> Result<i64, String> {
     }
     Ok(newest)
 }
-fn old(path: &Path, ctx: &ScanContext, days: i64) -> bool {
-    newest_mtime(path)
+fn old(path: &Path, ctx: &ScanContext, days: i64, visit: &mut dyn FnMut(&Path)) -> bool {
+    newest_mtime(path, visit)
         .map(|m| m <= ctx.now - days * 86400)
         .unwrap_or(false)
 }
@@ -96,10 +99,14 @@ impl CleanerPlugin for SimplePlugin {
     fn id(&self) -> &'static str {
         self.id
     }
+    fn category(&self) -> Category {
+        self.category
+    }
     fn discover(
         &self,
         ctx: &ScanContext,
         cancel: &AtomicBool,
+        visit: &mut dyn FnMut(&Path),
     ) -> Result<Vec<RawCandidate>, String> {
         let mut result = Vec::new();
         for (relative, days) in &self.roots {
@@ -107,6 +114,7 @@ impl CleanerPlugin for SimplePlugin {
                 if cancel.load(Ordering::Relaxed) {
                     break;
                 }
+                visit(&path);
                 let lower = path
                     .file_name()
                     .unwrap_or_default()
@@ -117,7 +125,7 @@ impl CleanerPlugin for SimplePlugin {
                 {
                     continue;
                 }
-                if old(&path, ctx, *days) {
+                if old(&path, ctx, *days, visit) {
                     result.push(raw(
                         self.id,
                         self.category,
@@ -137,30 +145,40 @@ impl CleanerPlugin for Downloads {
     fn id(&self) -> &'static str {
         "download-archives"
     }
-    fn discover(&self, ctx: &ScanContext, _: &AtomicBool) -> Result<Vec<RawCandidate>, String> {
-        Ok(children(&ctx.home.join("Downloads"))
-            .into_iter()
-            .filter(|p| {
-                p.is_file()
-                    && matches!(
-                        p.extension()
-                            .and_then(|x| x.to_str())
-                            .map(|x| x.to_lowercase())
-                            .as_deref(),
-                        Some("dmg" | "pkg" | "zip")
-                    )
-                    && old(p, ctx, 30)
-            })
-            .map(|p| {
-                raw(
+    fn category(&self) -> Category {
+        Category::DownloadLeftovers
+    }
+    fn discover(
+        &self,
+        ctx: &ScanContext,
+        cancel: &AtomicBool,
+        visit: &mut dyn FnMut(&Path),
+    ) -> Result<Vec<RawCandidate>, String> {
+        let mut result = Vec::new();
+        for path in children(&ctx.home.join("Downloads")) {
+            if cancel.load(Ordering::Relaxed) {
+                break;
+            }
+            visit(&path);
+            let archive = path.is_file()
+                && matches!(
+                    path.extension()
+                        .and_then(|x| x.to_str())
+                        .map(|x| x.to_lowercase())
+                        .as_deref(),
+                    Some("dmg" | "pkg" | "zip")
+                );
+            if archive && old(&path, ctx, 30, visit) {
+                result.push(raw(
                     self.id(),
                     Category::DownloadLeftovers,
                     Risk::Review,
-                    p,
+                    path,
                     "超过 30 天的安装包或压缩包，请确认不再需要",
-                )
-            })
-            .collect())
+                ));
+            }
+        }
+        Ok(result)
     }
 }
 
@@ -231,7 +249,15 @@ impl CleanerPlugin for VscodeDuplicates {
     fn id(&self) -> &'static str {
         "vscode-duplicates"
     }
-    fn discover(&self, ctx: &ScanContext, _: &AtomicBool) -> Result<Vec<RawCandidate>, String> {
+    fn category(&self) -> Category {
+        Category::DeveloperCaches
+    }
+    fn discover(
+        &self,
+        ctx: &ScanContext,
+        cancel: &AtomicBool,
+        visit: &mut dyn FnMut(&Path),
+    ) -> Result<Vec<RawCandidate>, String> {
         let base = ctx.home.join(".vscode/extensions");
         let obsolete: HashSet<String> = fs::read_to_string(base.join(".obsolete"))
             .ok()
@@ -243,6 +269,10 @@ impl CleanerPlugin for VscodeDuplicates {
             .collect();
         let mut groups: HashMap<(String, String, String), Vec<Ext>> = HashMap::new();
         for path in children(&base) {
+            if cancel.load(Ordering::Relaxed) {
+                break;
+            }
+            visit(&path);
             let Ok(text) = fs::read_to_string(path.join("package.json")) else {
                 continue;
             };
@@ -354,7 +384,7 @@ mod tests {
             project_roots: vec![],
         };
         let found = VscodeDuplicates
-            .discover(&ctx, &AtomicBool::new(false))
+            .discover(&ctx, &AtomicBool::new(false), &mut |_| {})
             .unwrap();
         assert_eq!(found.len(), 1);
         assert!(found[0].path.ends_with("acme.tool-1.9.0"));
@@ -378,7 +408,7 @@ mod tests {
             project_roots: vec![projects],
         };
         let found = ProjectDependencies
-            .discover(&ctx, &AtomicBool::new(false))
+            .discover(&ctx, &AtomicBool::new(false), &mut |_| {})
             .unwrap();
         assert_eq!(found.len(), 2);
         assert!(found.iter().all(|c| c.risk == Risk::Review));
@@ -395,15 +425,20 @@ impl CleanerPlugin for ProjectDependencies {
     fn id(&self) -> &'static str {
         "project-dependencies"
     }
+    fn category(&self) -> Category {
+        Category::ProjectDependencies
+    }
     fn discover(
         &self,
         ctx: &ScanContext,
         cancel: &AtomicBool,
+        visit: &mut dyn FnMut(&Path),
     ) -> Result<Vec<RawCandidate>, String> {
         let names = ["node_modules", ".venv", "venv"];
         let mut out = Vec::new();
         for name in names {
             let p = ctx.home.join(name);
+            visit(&p);
             if p.is_dir() && !p.is_symlink() {
                 out.push(raw(
                     self.id(),
@@ -417,6 +452,7 @@ impl CleanerPlugin for ProjectDependencies {
         for root in &ctx.project_roots {
             let mut stack = vec![(root.clone(), 0usize)];
             while let Some((current, depth)) = stack.pop() {
+                visit(&current);
                 if cancel.load(Ordering::Relaxed) || depth >= 8 {
                     continue;
                 }
@@ -425,6 +461,7 @@ impl CleanerPlugin for ProjectDependencies {
                 };
                 for entry in entries.filter_map(Result::ok) {
                     let path = entry.path();
+                    visit(&path);
                     if path.is_symlink() || !path.is_dir() {
                         continue;
                     }

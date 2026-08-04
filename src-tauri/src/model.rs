@@ -86,6 +86,7 @@ pub struct ScanReport {
 pub struct ScanSession {
     pub report: ScanReport,
     pub candidates: HashMap<String, CandidateInternal>,
+    pub categories: Vec<Category>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -93,10 +94,30 @@ pub struct ScanSession {
 pub enum ScanEvent {
     Started {
         scan_id: String,
+        total_plugins: usize,
+    },
+    PluginStarted {
+        plugin: String,
+        category: Category,
+        plugin_index: usize,
+        total_plugins: usize,
     },
     Progress {
         plugin: String,
+        category: Category,
         path: String,
+        plugin_index: usize,
+        total_plugins: usize,
+        visited: usize,
+        found: usize,
+        bytes: u64,
+    },
+    PluginCompleted {
+        plugin: String,
+        category: Category,
+        plugin_index: usize,
+        total_plugins: usize,
+        visited: usize,
         found: usize,
         bytes: u64,
     },
@@ -150,10 +171,11 @@ pub struct CleanReport {
     pub refreshed_scan: ScanReport,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ScanOptions {
     pub project_roots: Option<Vec<String>>,
+    pub categories: Vec<Category>,
 }
 
 #[cfg(test)]

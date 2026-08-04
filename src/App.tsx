@@ -2,38 +2,68 @@ import {useEffect,useMemo,useState} from "react";
 import {listen} from "@tauri-apps/api/event";
 import {open} from "@tauri-apps/plugin-dialog";
 import {beginScan,cancelScan,cleanCandidates,getSettings,saveSettings} from "./api";
-import type {Candidate,Category,CleanReport,ScanReport,Settings} from "./types";
+import type {Category,CleanReport,ScanReport,Settings} from "./types";
 import {zh} from "./i18n";
+import {size} from "./format";
+import {CompleteStep} from "./components/CompleteStep";
+import {ResultsStep} from "./components/ResultsStep";
+import {ScopeStep,selectableCategories} from "./components/ScopeStep";
+import {ScanningStep,emptyProgress,type ScanProgressState} from "./components/ScanningStep";
+import {WizardSteps,type WizardStep} from "./components/WizardSteps";
 import "./App.css";
-import "./extras.css";
-
-const categories:Category[]=["application-caches","developer-caches","project-dependencies","logs","crash-reports","download-leftovers","other"];
-const labels:Record<Category,string>=zh.category;
-export const size=(n:number)=>{const u=["B","KiB","MiB","GiB","TiB"];let i=0,v=n;while(v>=1024&&i<u.length-1){v/=1024;i++}return `${v.toFixed(1)} ${u[i]}`};
-export const deltaSize=(n:number)=>`${n>=0?"+":"−"}${size(Math.abs(n))}`;
 
 export default function App(){
- const [report,setReport]=useState<ScanReport|null>(null),[settings,setSettings]=useState<Settings>({projectRoots:[]}),[selected,setSelected]=useState<Set<string>>(new Set()),[query,setQuery]=useState(""),[filter,setFilter]=useState<"all"|"low"|"review">("all"),[categoryFilter,setCategoryFilter]=useState<Category|null>(null),[scanId,setScanId]=useState<string|null>(null),[status,setStatus]=useState<string>(zh.status.ready),[confirm,setConfirm]=useState(false),[cleaning,setCleaning]=useState(false),[result,setResult]=useState<CleanReport|null>(null),[settingsOpen,setSettingsOpen]=useState(false),[error,setError]=useState("");
- useEffect(()=>{getSettings().then(setSettings).catch(e=>setError(String(e)))},[]);
- useEffect(()=>{let unlisten:undefined|(()=>void);listen("cleaning-close-blocked",()=>setError(zh.closeBlocked)).then(fn=>{unlisten=fn});return()=>unlisten?.()},[]);
- const visible=useMemo(()=>report?.candidates.filter(c=>(filter==="all"||c.risk===filter)&&(!categoryFilter||c.category===categoryFilter)&&(!query||`${c.path} ${c.reason}`.toLowerCase().includes(query.toLowerCase())))??[],[report,filter,categoryFilter,query]);
- const sequence=useMemo(()=>new Map(visible.map((candidate,index)=>[candidate.id,index+1])),[visible]);
- const picked=report?.candidates.filter(c=>selected.has(c.id))??[];const pickedBytes=picked.reduce((s,c)=>s+c.sizeBytes,0);
- const start=async()=>{setError("");setSelected(new Set());setResult(null);setStatus(zh.status.starting);let terminal=false;try{const id=await beginScan(e=>{if(e.event==="progress")setStatus(`${e.plugin} · ${e.path.split("/").pop()} · ${e.found} ${zh.itemUnit} · ${size(e.bytes)}`);if(e.event==="completed"){terminal=true;setReport(e.report);setScanId(null);setStatus(zh.status.complete)}if(e.event==="cancelled"){terminal=true;setScanId(null);setStatus(zh.status.cancelled)}if(e.event==="failed"){terminal=true;setScanId(null);setError(e.message)}});if(!terminal)setScanId(id)}catch(e){setError(String(e));setScanId(null)}};
- const cancel=()=>scanId&&cancelScan(scanId).catch(e=>setError(String(e)));
- const toggle=(id:string)=>setSelected(s=>{const n=new Set(s);n.has(id)?n.delete(id):n.add(id);return n});
- const toggleGroup=(items:Candidate[])=>setSelected(s=>{const n=new Set(s),all=items.every(c=>n.has(c.id));items.forEach(c=>all?n.delete(c.id):n.add(c.id));return n});
- const doClean=async()=>{if(!report)return;setConfirm(false);setCleaning(true);setError("");let done=0;try{const r=await cleanCandidates(report.scanId,[...selected],e=>{if(e.event==="item_completed")setStatus(`${zh.status.moving} · ${++done}/${selected.size}`);if(e.event==="rescanning")setStatus(zh.status.rescanning)});setResult(r);setReport(r.refreshedScan);setSelected(new Set());setStatus(zh.status.cleanComplete)}catch(e){setError(String(e))}finally{setCleaning(false)}};
- const addRoot=async()=>{const value=await open({directory:true,multiple:false});if(typeof value==="string"&&!settings.projectRoots.includes(value)){saveSettings([...settings.projectRoots,value]).then(setSettings).catch(e=>setError(String(e)))}};
- const removeRoot=(root:string)=>saveSettings(settings.projectRoots.filter(r=>r!==root)).then(setSettings).catch(e=>setError(String(e)));
- return <div className="app">
-  <header><div className="brand"><span className="logo">◒</span><div><h1>{zh.appName}</h1><p>{zh.tagline}</p></div></div><div className="header-actions"><div className="disk"><span>{zh.availableSpace}</span><b>{report?size(report.disk.freeBytes):"—"}</b></div><button className="ghost" onClick={()=>setSettingsOpen(true)} disabled={!!scanId||cleaning}>⚙ {zh.settings}</button>{scanId?<button className="danger" onClick={cancel}>{zh.cancel}</button>:<button className="primary" onClick={start} disabled={cleaning}>{zh.scan}</button>}</div></header>
-  <div className="status">{status}{report&&<span> · {report.candidates.length} {zh.itemUnit} · {size(report.candidates.reduce((s,c)=>s+c.sizeBytes,0))}</span>}</div>{error&&<div className="error">{error}</div>}{report?.warnings.map(warning=><div className="warning-bar" key={warning}>{zh.scanWarning}{warning}</div>)}
-  <div className="workspace"><aside><button className={filter==="all"&&!categoryFilter?"active":""} onClick={()=>{setFilter("all");setCategoryFilter(null)}}>{zh.all} <span>{report?.candidates.length??0}</span></button><button className={filter==="low"&&!categoryFilter?"active":""} onClick={()=>{setFilter("low");setCategoryFilter(null)}}>{zh.low}<span>{report?.candidates.filter(c=>c.risk==="low").length??0}</span></button><button className={filter==="review"&&!categoryFilter?"active":""} onClick={()=>{setFilter("review");setCategoryFilter(null)}}>{zh.review}<span>{report?.candidates.filter(c=>c.risk==="review").length??0}</span></button>{categories.map(cat=><button className={categoryFilter===cat?"active":""} key={cat} onClick={()=>{setFilter("all");setCategoryFilter(cat)}}>{labels[cat]}<span>{report?.candidates.filter(c=>c.category===cat).length??0}</span></button>)}</aside>
-  <main>{!report?<div className="empty"><div>◎</div><h2>{zh.empty}</h2><p>{zh.emptyHint}</p></div>:<><input className="search" placeholder={zh.search} value={query} onChange={e=>setQuery(e.target.value)}/>{(["low","review"] as const).map(risk=>categories.map(cat=>{const items=visible.filter(c=>c.risk===risk&&c.category===cat).sort((a,b)=>b.sizeBytes-a.sizeBytes);if(!items.length)return null;return <section key={`${risk}-${cat}`}><div className="group"><div><span className={`risk ${risk}`}>{risk==="low"?zh.low:zh.review}</span><h3>{labels[cat]}</h3><small>{items.length} {zh.itemUnit} · {size(items.reduce((s,c)=>s+c.sizeBytes,0))}</small></div><button onClick={()=>toggleGroup(items)}>{items.every(c=>selected.has(c.id))?zh.unselectGroup:zh.selectGroup}</button></div>{items.map(c=><label className="candidate" key={c.id}><input aria-label={`${zh.select} ${c.path}`} type="checkbox" checked={selected.has(c.id)} onChange={()=>toggle(c.id)}/><span className="index">{(sequence.get(c.id)??0).toString().padStart(2,"0")}</span><div className="candidate-copy"><strong>{c.path.split("/").pop()}</strong><code>{c.path}</code><p>{c.reason}</p></div><div className="meta"><b>{size(c.sizeBytes)}</b><span>{new Date(c.modifiedAt*1000).toLocaleDateString(zh.locale)}</span></div></label>)}</section>}) )}</>}</main></div>
-  <footer><div><b>{zh.selected} {picked.length} {zh.itemUnit}</b><span>{size(pickedBytes)}</span></div><button className="primary" disabled={!picked.length||cleaning||!!scanId} onClick={()=>setConfirm(true)}>{zh.move}</button></footer>
-  {confirm&&<div className="overlay"><div className="modal"><h2>{zh.confirmTitle}</h2><div className="summary"><b>{picked.length} {zh.itemUnit}</b><strong>{size(pickedBytes)}</strong></div><p>{zh.confirmSummary(picked.filter(c=>c.risk==="low").length,picked.filter(c=>c.risk==="review").length)}</p>{picked.some(c=>c.category==="project-dependencies")&&<div className="warning">{zh.dependencyWarning}</div>}<div className="modal-actions"><button onClick={()=>setConfirm(false)}>{zh.close}</button><button className="primary" onClick={doClean}>{zh.confirm}</button></div></div></div>}
-  {result&&<div className="toast"><b>{zh.result}</b><span>{zh.moved} {result.movedCount} {zh.itemUnit} / {size(result.movedBytes)}</span><span>{zh.failed} {result.failures.length} {zh.itemUnit} / {size(result.failedBytes)}</span><span>{zh.freeDelta} {deltaSize(result.freeAfter-result.freeBefore)}</span><span>{zh.trashReclaimable} {size(result.trashAfter)}</span><small>{zh.trashNote}</small><button onClick={()=>setResult(null)}>×</button></div>}
-  {settingsOpen&&<div className="overlay"><div className="modal settings"><h2>{zh.settingsTitle}</h2><p>{zh.settingsHint}</p><div className="roots">{settings.projectRoots.map(root=><div key={root}><code>{root}</code><button onClick={()=>removeRoot(root)}>{zh.remove}</button></div>)}</div><button onClick={addRoot}>{zh.addRoot}</button><div className="modal-actions"><button className="primary" onClick={()=>setSettingsOpen(false)}>{zh.done}</button></div></div></div>}
- </div>
+ const [step,setStep]=useState<WizardStep>("scope");
+ const [settings,setSettings]=useState<Settings>({projectRoots:[]});
+ const [selectedCategories,setSelectedCategories]=useState<Set<Category>>(new Set(selectableCategories));
+ const [scanId,setScanId]=useState<string|null>(null);
+ const [progress,setProgress]=useState<ScanProgressState>(emptyProgress);
+ const [report,setReport]=useState<ScanReport|null>(null);
+ const [selected,setSelected]=useState<Set<string>>(new Set());
+ const [confirm,setConfirm]=useState(false);
+ const [cleaning,setCleaning]=useState(false);
+ const [cleanStatus,setCleanStatus]=useState<string>(zh.cleaning);
+ const [cleanReport,setCleanReport]=useState<CleanReport|null>(null);
+ const [settingsOpen,setSettingsOpen]=useState(false);
+ const [notice,setNotice]=useState("");
+ const [error,setError]=useState("");
+
+ useEffect(()=>{getSettings().then(setSettings).catch(value=>setError(String(value)))},[]);
+ useEffect(()=>{let unlisten:undefined|(()=>void);listen("cleaning-close-blocked",()=>setError(zh.closeBlocked)).then(value=>{unlisten=value});return()=>unlisten?.()},[]);
+ const picked=useMemo(()=>report?.candidates.filter(candidate=>selected.has(candidate.id))??[],[report,selected]);
+ const disk=report?.disk??cleanReport?.refreshedScan.disk;
+
+ const toggleCategory=(category:Category)=>setSelectedCategories(current=>{const next=new Set(current);next.has(category)?next.delete(category):next.add(category);return next});
+ const startScan=async()=>{
+  setError("");setNotice("");setReport(null);setCleanReport(null);setSelected(new Set());setProgress(emptyProgress);setStep("scanning");let terminal=false;
+  try{
+   const id=await beginScan([...selectedCategories],event=>{
+    if(event.event==="started")setProgress(current=>({...current,totalPlugins:event.total_plugins}));
+    if(event.event==="plugin_started")setProgress(current=>({...current,plugin:event.plugin,category:event.category,path:"",pluginIndex:event.plugin_index,totalPlugins:event.total_plugins,completedPlugins:event.plugin_index-1,visited:0}));
+    if(event.event==="progress")setProgress({plugin:event.plugin,category:event.category,path:event.path,pluginIndex:event.plugin_index,totalPlugins:event.total_plugins,completedPlugins:event.plugin_index-1,visited:event.visited,found:event.found,bytes:event.bytes});
+    if(event.event==="plugin_completed")setProgress(current=>({...current,plugin:event.plugin,category:event.category,pluginIndex:event.plugin_index,totalPlugins:event.total_plugins,completedPlugins:event.plugin_index,visited:event.visited,found:event.found,bytes:event.bytes}));
+    if(event.event==="completed"){terminal=true;setScanId(null);setReport(event.report);setSelected(new Set());setStep("results")}
+    if(event.event==="cancelled"){terminal=true;setScanId(null);setStep("scope");setNotice(zh.scanCancelled)}
+    if(event.event==="failed"){terminal=true;setScanId(null);setStep("scope");setError(event.message)}
+   });
+   if(!terminal)setScanId(id);
+  }catch(value){setScanId(null);setStep("scope");setError(String(value))}
+ };
+ const cancel=()=>{if(scanId)cancelScan(scanId).catch(value=>setError(String(value)))};
+ const backToScope=()=>{setReport(null);setSelected(new Set());setError("");setNotice("");setStep("scope")};
+ const doClean=async()=>{
+  if(!report||!selected.size)return;
+  setConfirm(false);setCleaning(true);setError("");setCleanStatus(zh.cleaning);let done=0;
+  try{const value=await cleanCandidates(report.scanId,[...selected],event=>{if(event.event==="item_completed")setCleanStatus(zh.movingProgress(++done,selected.size));if(event.event==="rescanning")setCleanStatus(zh.rescanning)});setCleanReport(value);setReport(value.refreshedScan);setSelected(new Set());setStep("complete")}catch(value){setError(String(value))}finally{setCleaning(false)}
+ };
+ const viewRemaining=()=>{if(cleanReport){setReport(cleanReport.refreshedScan);setSelected(new Set());setStep("results")}};
+ const restart=()=>{setReport(null);setCleanReport(null);setSelected(new Set());setProgress(emptyProgress);setError("");setNotice("");setStep("scope")};
+ const addRoot=async()=>{const value=await open({directory:true,multiple:false});if(typeof value==="string"&&!settings.projectRoots.includes(value)){saveSettings([...settings.projectRoots,value]).then(setSettings).catch(reason=>setError(String(reason)))}};
+ const removeRoot=(root:string)=>saveSettings(settings.projectRoots.filter(value=>value!==root)).then(setSettings).catch(reason=>setError(String(reason)));
+
+ return <div className="app"><header className="app-header"><div className="brand"><span className="logo">◒</span><div><h1>{zh.appName}</h1><p>{zh.tagline}</p></div></div><div className="header-actions"><div className="disk"><span>{zh.availableSpace}</span><b>{disk?size(disk.freeBytes):"—"}</b></div>{step==="scope"&&<button className="ghost" onClick={()=>setSettingsOpen(true)}>⚙ {zh.settings}</button>}</div></header><WizardSteps step={step}/>{error&&<div className="error-banner">{error}</div>}{notice&&<div className="notice-banner">{notice}</div>}<main className="app-main">{step==="scope"&&<ScopeStep selected={selectedCategories} settings={settings} onToggle={toggleCategory} onAll={()=>setSelectedCategories(new Set(selectableCategories))} onClear={()=>setSelectedCategories(new Set())} onStart={startScan} onManageRoots={()=>setSettingsOpen(true)}/>} {step==="scanning"&&<ScanningStep progress={progress} onCancel={cancel}/>} {step==="results"&&report&&<ResultsStep report={report} selected={selected} onSelected={setSelected} onBack={backToScope} onClean={()=>setConfirm(true)} cleaning={cleaning}/>} {step==="complete"&&cleanReport&&<CompleteStep report={cleanReport} onRemaining={viewRemaining} onRestart={restart}/>}</main>
+ {confirm&&<div className="overlay"><div className="modal"><h2>{zh.confirmTitle}</h2><div className="summary"><b>{picked.length} {zh.itemUnit}</b><strong>{size(picked.reduce((sum,item)=>sum+item.sizeBytes,0))}</strong></div><p>{zh.confirmSummary(picked.filter(item=>item.risk==="low").length,picked.filter(item=>item.risk==="review").length)}</p>{picked.some(item=>item.category==="project-dependencies")&&<div className="warning">{zh.dependencyWarning}</div>}<div className="modal-actions"><button onClick={()=>setConfirm(false)}>{zh.close}</button><button className="primary" onClick={doClean}>{zh.confirm}</button></div></div></div>}
+ {cleaning&&<div className="overlay"><div className="cleaning-card"><div className="spinner"/><h2>{cleanStatus}</h2><p>{zh.cleaningHint}</p></div></div>}
+ {settingsOpen&&<div className="overlay"><div className="modal settings-modal"><h2>{zh.settingsTitle}</h2><p>{zh.settingsHint}</p><div className="roots">{settings.projectRoots.map(root=><div key={root}><code>{root}</code><button onClick={()=>removeRoot(root)}>{zh.remove}</button></div>)}</div><button onClick={addRoot}>{zh.addRoot}</button><div className="modal-actions"><button className="primary" onClick={()=>setSettingsOpen(false)}>{zh.done}</button></div></div></div>}
+ </div>;
 }
