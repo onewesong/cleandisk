@@ -45,6 +45,19 @@ pub fn snapshot(path: &Path) -> Result<Snapshot, String> {
     snapshot_with_visit(path, &mut |_| {})
 }
 
+pub fn directory_size_strict(path: &Path) -> Result<u64, String> {
+    let mut size = 0u64;
+    for entry in WalkDir::new(path).follow_links(false) {
+        let entry = entry.map_err(|error| format!("{}: {error}", path.display()))?;
+        let metadata = fs::symlink_metadata(entry.path())
+            .map_err(|error| format!("{}: {error}", entry.path().display()))?;
+        if metadata.is_file() {
+            size = size.saturating_add(metadata.len());
+        }
+    }
+    Ok(size)
+}
+
 fn snapshot_with_visit(path: &Path, visit: &mut dyn FnMut(&Path)) -> Result<Snapshot, String> {
     let root_meta = fs::symlink_metadata(path).map_err(|e| e.to_string())?;
     if root_meta.file_type().is_symlink() {
@@ -440,6 +453,20 @@ mod tests {
         symlink(outside.path().join("large"), candidate.join("link")).unwrap();
         let snap = snapshot(&candidate).unwrap();
         assert_eq!(snap.size, 3);
+    }
+    #[test]
+    fn strict_directory_size_counts_files_but_not_symlink_targets() {
+        let home = tempdir().unwrap();
+        let outside = tempdir().unwrap();
+        let directory = home.path().join("directory");
+        fs::create_dir(&directory).unwrap();
+        fs::create_dir(directory.join("nested")).unwrap();
+        fs::write(directory.join("first"), b"123").unwrap();
+        fs::write(directory.join("nested/second"), b"4567").unwrap();
+        fs::write(outside.path().join("large"), vec![0u8; 1024]).unwrap();
+        symlink(outside.path().join("large"), directory.join("link")).unwrap();
+        assert_eq!(directory_size_strict(&directory).unwrap(), 7);
+        assert!(directory_size_strict(&home.path().join("missing")).is_err());
     }
     #[test]
     fn cancelled_scan_stops_before_plugins() {

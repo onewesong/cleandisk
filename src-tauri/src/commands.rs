@@ -151,8 +151,17 @@ pub fn cancel_scan(state: State<'_, AppState>, scan_id: String) -> Result<(), St
     Ok(())
 }
 
-fn dir_size(path: &Path) -> u64 {
-    scanner::snapshot(path).map(|s| s.size).unwrap_or(0)
+fn trash_size(path: &Path) -> SizeMeasurement {
+    match scanner::directory_size_strict(path) {
+        Ok(bytes) => SizeMeasurement {
+            bytes: Some(bytes),
+            error: None,
+        },
+        Err(error) => SizeMeasurement {
+            bytes: None,
+            error: Some(format!("无法读取系统废纸篓：{error}")),
+        },
+    }
 }
 
 #[tauri::command]
@@ -205,7 +214,7 @@ pub async fn clean_candidates(
         let trash_path = home.join(".Trash");
         let settings = settings::load(&settings_path(&app)?, &home);
         let free_before = fs2::available_space(&home).unwrap_or(0);
-        let trash_before = dir_size(&trash_path);
+        let trash_before = trash_size(&trash_path);
         let _ = on_event.send(CleanEvent::Started {
             total: selected.len(),
         });
@@ -247,7 +256,7 @@ pub async fn clean_candidates(
         .await
         .map_err(|e| e.to_string())??;
         let free_after = fs2::available_space(&home).unwrap_or(0);
-        let trash_after = dir_size(&home.join(".Trash"));
+        let trash_after = trash_size(&home.join(".Trash"));
         let report = refreshed.report.clone();
         {
             let mut inner = state.inner.lock().map_err(|_| "状态锁损坏")?;

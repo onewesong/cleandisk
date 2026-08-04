@@ -159,6 +159,13 @@ pub struct CleanFailure {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
+pub struct SizeMeasurement {
+    pub bytes: Option<u64>,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct CleanReport {
     pub moved_count: usize,
     pub moved_bytes: u64,
@@ -166,8 +173,8 @@ pub struct CleanReport {
     pub failures: Vec<CleanFailure>,
     pub free_before: u64,
     pub free_after: u64,
-    pub trash_before: u64,
-    pub trash_after: u64,
+    pub trash_before: SizeMeasurement,
+    pub trash_after: SizeMeasurement,
     pub refreshed_scan: ScanReport,
 }
 

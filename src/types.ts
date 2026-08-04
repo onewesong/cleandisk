@@ -14,4 +14,5 @@ export type ScanEvent =
  |{event:"failed";scan_id:string;message:string};
 export type CleanEvent = {event:"started";total:number}|{event:"item_completed";id:string;success:boolean;message:string}|{event:"rescanning"}|{event:"completed"};
 export interface CleanFailure { id:string;path:string;message:string;sizeBytes:number }
-export interface CleanReport { movedCount:number;movedBytes:number;failedBytes:number;failures:CleanFailure[];freeBefore:number;freeAfter:number;trashBefore:number;trashAfter:number;refreshedScan:ScanReport }
+export interface SizeMeasurement { bytes:number|null;error:string|null }
+export interface CleanReport { movedCount:number;movedBytes:number;failedBytes:number;failures:CleanFailure[];freeBefore:number;freeAfter:number;trashBefore:SizeMeasurement;trashAfter:SizeMeasurement;refreshedScan:ScanReport }

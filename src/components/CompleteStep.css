@@ -1,0 +1,7 @@
+.metric.unavailable {
+  background: #fafafa;
+}
+
+.metric.unavailable small {
+  line-height: 1.35;
+}

@@ -9,6 +9,6 @@ export const zh={
  resultsTitle:"扫描结果",resultsHint:"候选项默认不勾选，请按风险和原因逐项审查。",search:"搜索路径或原因",all:"全部",low:"低风险",review:"需审查",select:"选择",selectGroup:"全选分组",unselectGroup:"取消全选",selected:"已选",move:"移入废纸篓",
  confirmTitle:"确认移入废纸篓",confirm:"确认移动",close:"取消",confirmSummary:(low:number,review:number)=>`低风险 ${low} 项，需审查 ${review} 项。内容将移入系统废纸篓，不会永久删除。`,dependencyWarning:"包含项目依赖，之后需要通过包管理器重新安装。",
  cleaning:"正在移入废纸篓",cleaningHint:"清理开始后不能取消，请保持应用开启。",rescanning:"正在复扫剩余候选…",movingProgress:(done:number,total:number)=>`正在移动 ${done}/${total}`,
- completeTitle:"清理完成",completeHint:"文件已移入系统废纸篓，下面是本次操作的空间对比。",moved:"已移动",failed:"失败",freeBefore:"清理前可用",freeAfter:"清理后可用",freeDelta:"可用空间变化",trashReclaimable:"废纸篓可回收",trashNote:"移入废纸篓通常不会立即释放磁盘空间；永久释放需要你另行手动清空废纸篓。",viewRemaining:"查看剩余候选",scanAgain:"重新扫描",
+ completeTitle:"清理完成",completeHint:"文件已移入系统废纸篓，下面是本次操作的空间对比。",moved:"本次移入废纸篓（逻辑大小）",failed:"失败",freeBefore:"清理前可用",freeAfter:"清理后可用",freeDelta:"可用空间变化",trashReclaimable:"废纸篓总可回收",trashUnavailable:"无法读取",trashUnavailableHint:"macOS 未授权读取废纸篓内容，不能可靠计算总容量。",trashNote:"移入废纸篓通常不会立即释放磁盘空间；永久释放需要你另行手动清空废纸篓。",viewRemaining:"查看剩余候选",scanAgain:"重新扫描",
  settingsTitle:"项目扫描目录",settingsHint:"仅扫描这些目录中的 node_modules、.venv 和 venv。",remove:"移除",addRoot:"＋ 添加目录",done:"完成",closeBlocked:"清理正在进行，请等待完成后再退出。",
 } as const;
