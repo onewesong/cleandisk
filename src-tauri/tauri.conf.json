@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "CleanDisk",
-  "version": "0.2.0",
+  "version": "0.2.2",
   "identifier": "com.songe.cleandisk",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -27,7 +27,9 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["app"],
+    "targets": [
+      "app"
+    ],
     "macOS": {
       "minimumSystemVersion": "12.0"
     },
