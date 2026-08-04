@@ -1,0 +1,15 @@
+export const zh={
+ appName:"CleanDisk",tagline:"安全地找回 Mac 空间",scan:"开始扫描",cancel:"取消扫描",settings:"项目目录",
+ empty:"尚未扫描",emptyHint:"点击开始扫描，候选项默认不会勾选。",move:"移入废纸篓",search:"搜索路径或原因",
+ low:"低风险",review:"需审查",all:"全部",availableSpace:"可用空间",itemUnit:"项",scanWarning:"扫描警告：",
+ confirmTitle:"确认移入废纸篓",confirm:"确认移动",close:"取消",result:"清理完成",select:"选择",selectGroup:"全选分组",unselectGroup:"取消全选",
+ status:{ready:"准备扫描",starting:"正在启动扫描…",complete:"扫描完成",cancelled:"扫描已取消",rescanning:"正在复扫…",cleanComplete:"清理并复扫完成",moving:"正在移动"},
+ closeBlocked:"清理正在进行，请等待完成后再退出。",
+ category:{"application-caches":"应用缓存","developer-caches":"开发工具缓存","project-dependencies":"项目依赖",logs:"日志","crash-reports":"崩溃报告","download-leftovers":"下载残留",other:"其他"},
+ selected:"已选",confirmSummary:(low:number,review:number)=>`低风险 ${low} 项，需审查 ${review} 项。内容将移入系统废纸篓，不会永久删除。`,
+ dependencyWarning:"包含项目依赖，之后需要通过包管理器重新安装。",
+ moved:"已移动",failed:"失败",freeDelta:"可用空间变化",trashReclaimable:"废纸篓可回收约",
+ trashNote:"移入废纸篓通常不会立即释放空间，需手动清空废纸篓。",
+ settingsTitle:"项目扫描目录",settingsHint:"仅扫描这些目录中的 node_modules、.venv 和 venv。",remove:"移除",addRoot:"＋ 添加目录",done:"完成",
+ locale:"zh-CN",
+} as const;

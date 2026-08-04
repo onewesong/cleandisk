@@ -1,0 +1,19 @@
+{
+  "scanId": "fixture-scan",
+  "generatedAt": "2026-08-04T00:00:00Z",
+  "disk": { "totalBytes": 1000, "freeBytes": 400 },
+  "candidates": [
+    {
+      "id": "candidate-1",
+      "plugin": "fixture",
+      "category": "developer-caches",
+      "risk": "low",
+      "path": "/Users/demo/.cache/example",
+      "sizeBytes": 200,
+      "modifiedAt": 1700000000,
+      "reason": "fixture",
+      "action": "move_to_trash"
+    }
+  ],
+  "warnings": []
+}
