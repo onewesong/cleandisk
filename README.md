@@ -33,6 +33,22 @@ npm run tauri build -- --bundles app
 
 本次验收构建另存为 `artifacts/CleanDisk.app`（该目录不纳入 Git）。
 
+## Homebrew 安装
+
+Apple Silicon Mac 可以通过个人 Tap 安装最新版：
+
+```bash
+brew install --cask onewesong/tap/cleandisk
+```
+
+应用会安装到 `/Applications/CleanDisk.app`。当前发布包使用 ad-hoc 签名且未经过 Apple 公证，首次打开时 macOS 可能要求在“系统设置 > 隐私与安全性”中确认。
+
+卸载：
+
+```bash
+brew uninstall --cask cleandisk
+```
+
 ## CI 与发布
 
 GitHub Actions 会在推送到 `main` 或向 `main` 提交 Pull Request 时运行前端测试、前端构建和 Rust 测试。
